@@ -141,6 +141,8 @@ CREATE VIEW FilmsInProgrammation AS
 	
 SELECT * FROM FilmsInProgrammation
 
+------------------------------------------------------------------------
+
 /*
  * Creare una vista AvailableSeatsForShow che, per ogni spettacolo, mostri il numero totale di
  * posti nella sala e quanti sono ancora disponibili. Questa vista è essenziale per il personale alla
@@ -157,6 +159,8 @@ CREATE VIEW AvailableSeatsForShow AS
 
 SELECT * FROM AvailableSeatsForShow;
 
+------------------------------------------------------------------------
+
 /*
  * Generare una vista TotalEarningsPerMovie che elenchi ogni film insieme agli incassi totali
  * generati. Questa informazione è cruciale per la direzione per valutare il successo commerciale dei
@@ -171,12 +175,14 @@ CREATE VIEW TotalEarningsPerMovie AS
 
 SELECT * FROM TotalEarningsPerMovie;
 
+------------------------------------------------------------------------
+
 /*
  * Creare una vista RecentReviews che mostri le ultime recensioni lasciate dai clienti, includendo il
  * titolo del film, la valutazione, il testo della recensione e la data. Questo permetterà al personale e
  * alla direzione di monitorare il feedback dei clienti in tempo reale.
  */
-
+ 
 CREATE VIEW RecentReviews AS
 	SELECT Review.ReviewText AS 'Reviews Text', Movie.Title AS 'Title', Review.Rating AS 'Rating', Review.ReviewDate AS 'Date'
 	FROM Review
@@ -184,14 +190,131 @@ CREATE VIEW RecentReviews AS
 	ORDER BY Review.ReviewDate DESC
 
 SELECT * FROM RecentReviews
+
 ------------------------------------------------------------------
+
 /*
  * Creare una stored procedure PurchaseTicket che permetta di acquistare un biglietto per uno
  * spettacolo, specificando l'ID dello spettacolo, il numero del posto e l'ID del cliente. La procedura
  * dovrebbe verificare la disponibilità del posto e registrare l'acquisto.
  */
- CREATE PROCEDURE PurchaseTicket
- AS
- BEGIN
-	
- END;
+DROP PROCEDURE IF EXISTS PurchaseTicket;
+CREATE PROCEDURE PurchaseTicket
+    @ShowtimeID INT,
+    @SeatNumber VARCHAR(10),
+    @CustomerID INT,
+    @PurchasedDateTime DATETIME
+AS
+BEGIN
+    BEGIN TRY
+        BEGIN TRANSACTION
+            DECLARE @count INT;
+            SELECT @count = COUNT(*)
+				FROM Ticket
+				WHERE ShowtimeID = @ShowtimeID AND SeatNumber = @SeatNumber;
+            PRINT 'Valore di @count: ' + CAST(@count AS VARCHAR);
+            IF @count = 0
+            BEGIN
+
+                DECLARE @NewTicketID INT;
+                SELECT @NewTicketID = ISNULL(MAX(TicketID), 0) + 1 
+					FROM Ticket;
+                
+                INSERT INTO Ticket (TicketID, ShowtimeID, SeatNumber, PurchasedDateTime, CustomerID)
+                VALUES (@NewTicketID, @ShowtimeID, @SeatNumber, @PurchasedDateTime, @CustomerID);
+                
+                
+                PRINT 'Biglietto acquistato con successo.';
+            END
+            ELSE
+            BEGIN
+                THROW 50002, 'Errore: Il posto selezionato non è disponibile.', 1;
+            END
+            
+            COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        PRINT 'Oggetto non trovato o errore generico: ' + ERROR_MESSAGE();
+    END CATCH
+END;
+
+
+EXEC PurchaseTicket @ShowtimeID = 1, @SeatNumber = 'D1', @CustomerID = 1, @PurchasedDateTime = '2024-03-20T14:00:00';
+EXEC PurchaseTicket @ShowtimeID = 1, @SeatNumber = 'A1', @CustomerID = 2, @PurchasedDateTime = '2024-03-20T15:00:00';
+EXEC PurchaseTicket @ShowtimeID = 2, @SeatNumber = 'B2', @CustomerID = 1, @PurchasedDateTime = '2024-03-21T16:00:00';
+EXEC PurchaseTicket @ShowtimeID = 3, @SeatNumber = 'C3', @CustomerID = 3, @PurchasedDateTime = '2024-03-22T17:00:00';
+SELECT * FROM Ticket WHERE ShowtimeID = 1;
+
+------------------------------------------------------------------------
+
+/*
+ * Implementare una stored procedure UpdateMovieSchedule che permetta di aggiornare gli orari
+ * degli spettacoli per un determinato film. Questo include la possibilità di aggiungere o rimuovere
+ * spettacoli dall'agenda.
+ */
+DROP PROCEDURE IF EXISTS UpdateMovieSchedule;
+CREATE PROCEDURE UpdateMovieSchedule
+    @ShowtimeID INT = NULL,
+    @MovieID INT = NULL,
+    @TheaterID INT = NULL,
+    @ShowDateTime DATETIME = NULL,
+    @Price DECIMAL(5,2) = NULL,
+    @comando NVARCHAR(10)
+AS
+BEGIN
+    BEGIN TRY
+        BEGIN TRANSACTION
+        IF @comando = 'aggiungi'
+        BEGIN
+            DECLARE @NextShowtimeID INT = 1;
+
+            WHILE EXISTS (SELECT * FROM Showtime WHERE ShowtimeID = @NextShowtimeID)
+            BEGIN
+                SET @NextShowtimeID = @NextShowtimeID + 1;
+            END
+            
+            IF NOT EXISTS (SELECT * FROM Showtime
+                           WHERE MovieID = @MovieID AND TheaterID = @TheaterID
+                           AND ShowDateTime = @ShowDateTime)
+            BEGIN
+                INSERT INTO Showtime (ShowtimeID, MovieID, TheaterID, ShowDateTime, Price)
+                VALUES (@NextShowtimeID, @MovieID, @TheaterID, @ShowDateTime, @Price)
+                
+                PRINT 'spettacolo aggiunto';
+            END
+            ELSE
+            BEGIN
+                PRINT 'spettacolo esistente';
+            END
+        END
+        ELSE IF @comando = 'rimuovi'
+		BEGIN
+			IF EXISTS (SELECT * FROM Showtime WHERE ShowtimeID = @ShowtimeID)
+			BEGIN
+				DELETE FROM Ticket WHERE ShowtimeID = @ShowtimeID;
+				DELETE FROM Showtime WHERE ShowtimeID = @ShowtimeID;
+				PRINT 'spettacolo rimosso';
+			END
+			ELSE
+			BEGIN
+				PRINT 'spettacolo non trovato';
+			END
+		END
+
+        ELSE
+        BEGIN
+            THROW 50002, 'comando sbagliato', 1;
+        END
+        
+        COMMIT TRANSACTION
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION
+        PRINT 'errore : ' + ERROR_MESSAGE();
+    END CATCH
+END;
+
+EXEC UpdateMovieSchedule @MovieID = 1, @TheaterID = 1, @ShowDateTime = '2024-04-01T20:00:00', @Price = 12.50, @comando = 'aggiungi';
+
+EXEC UpdateMovieSchedule @ShowtimeID = 1, @comando = 'rimuovi';
