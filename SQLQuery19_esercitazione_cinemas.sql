@@ -184,4 +184,14 @@ CREATE VIEW RecentReviews AS
 	ORDER BY Review.ReviewDate DESC
 
 SELECT * FROM RecentReviews
+------------------------------------------------------------------
+/*
+ * Creare una stored procedure PurchaseTicket che permetta di acquistare un biglietto per uno
+ * spettacolo, specificando l'ID dello spettacolo, il numero del posto e l'ID del cliente. La procedura
+ * dovrebbe verificare la disponibilità del posto e registrare l'acquisto.
+ */
+ CREATE PROCEDURE PurchaseTicket
+ AS
+ BEGIN
 	
+ END;
