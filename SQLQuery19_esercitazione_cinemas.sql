@@ -210,41 +210,56 @@ BEGIN
         BEGIN TRANSACTION
             DECLARE @count INT;
             SELECT @count = COUNT(*)
-				FROM Ticket
-				WHERE ShowtimeID = @ShowtimeID AND SeatNumber = @SeatNumber;
-            PRINT 'Valore di @count: ' + CAST(@count AS VARCHAR);
+            FROM Ticket
+            WHERE ShowtimeID = @ShowtimeID AND SeatNumber = @SeatNumber;
+            
+            IF NOT EXISTS (SELECT 1 FROM Showtime WHERE ShowtimeID = @ShowtimeID)
+            BEGIN
+                THROW 50002, 'errore: lo spettacolo non esiste', 1;
+            END
+            
+            PRINT '@count: ' + CAST(@count AS VARCHAR);	
             IF @count = 0
             BEGIN
-
-                DECLARE @NewTicketID INT;
-                SELECT @NewTicketID = ISNULL(MAX(TicketID), 0) + 1 
-					FROM Ticket;
-                
-                INSERT INTO Ticket (TicketID, ShowtimeID, SeatNumber, PurchasedDateTime, CustomerID)
-                VALUES (@NewTicketID, @ShowtimeID, @SeatNumber, @PurchasedDateTime, @CustomerID);
-                
-                
-                PRINT 'Biglietto acquistato con successo.';
+                INSERT INTO Ticket (ShowtimeID, SeatNumber, PurchasedDateTime, CustomerID)
+                VALUES (@ShowtimeID, @SeatNumber, @PurchasedDateTime, @CustomerID);
+                PRINT 'biglietto acquistato';
             END
             ELSE
             BEGIN
-                THROW 50002, 'Errore: Il posto selezionato non è disponibile.', 1;
+                THROW 50002, 'biglietto non esistente', 1;
             END
-            
             COMMIT TRANSACTION;
     END TRY
     BEGIN CATCH
         ROLLBACK TRANSACTION;
-        PRINT 'Oggetto non trovato o errore generico: ' + ERROR_MESSAGE();
+        PRINT 'errore ' + ERROR_MESSAGE();
     END CATCH
 END;
 
+EXEC PurchaseTicket 
+	@ShowtimeID = 1, 
+	@SeatNumber = 'D1', 
+	@CustomerID = 1, 
+	@PurchasedDateTime = '2024-03-20T14:00:00';
 
-EXEC PurchaseTicket @ShowtimeID = 1, @SeatNumber = 'D1', @CustomerID = 1, @PurchasedDateTime = '2024-03-20T14:00:00';
-EXEC PurchaseTicket @ShowtimeID = 1, @SeatNumber = 'A1', @CustomerID = 2, @PurchasedDateTime = '2024-03-20T15:00:00';
-EXEC PurchaseTicket @ShowtimeID = 2, @SeatNumber = 'B2', @CustomerID = 1, @PurchasedDateTime = '2024-03-21T16:00:00';
-EXEC PurchaseTicket @ShowtimeID = 3, @SeatNumber = 'C3', @CustomerID = 3, @PurchasedDateTime = '2024-03-22T17:00:00';
-SELECT * FROM Ticket WHERE ShowtimeID = 1;
+EXEC PurchaseTicket 
+	@ShowtimeID = 1, 
+	@SeatNumber = 'A1', 
+	@CustomerID = 2, 
+	@PurchasedDateTime = '2024-03-20T15:00:00';
+
+EXEC PurchaseTicket 
+	@ShowtimeID = 2, 
+	@SeatNumber = 'B2', 
+	@CustomerID = 1, 
+	@PurchasedDateTime = '2024-03-21T16:00:00';
+
+EXEC PurchaseTicket 
+	@ShowtimeID = 3, 
+	@SeatNumber = 'C3', 
+	@CustomerID = 3, 
+	@PurchasedDateTime = '2024-03-22T17:00:00';
 
 ------------------------------------------------------------------------
 
@@ -279,8 +294,7 @@ BEGIN
                            AND ShowDateTime = @ShowDateTime)
             BEGIN
                 INSERT INTO Showtime (ShowtimeID, MovieID, TheaterID, ShowDateTime, Price)
-                VALUES (@NextShowtimeID, @MovieID, @TheaterID, @ShowDateTime, @Price)
-                
+                VALUES (@NextShowtimeID, @MovieID, @TheaterID, @ShowDateTime, @Price)    
                 PRINT 'spettacolo aggiunto';
             END
             ELSE
@@ -306,7 +320,6 @@ BEGIN
         BEGIN
             THROW 50002, 'comando sbagliato', 1;
         END
-        
         COMMIT TRANSACTION
     END TRY
     BEGIN CATCH
@@ -315,6 +328,120 @@ BEGIN
     END CATCH
 END;
 
-EXEC UpdateMovieSchedule @MovieID = 1, @TheaterID = 1, @ShowDateTime = '2024-04-01T20:00:00', @Price = 12.50, @comando = 'aggiungi';
+EXEC UpdateMovieSchedule 
+	@MovieID = 1, 
+	@TheaterID = 1, 
+	@ShowDateTime = '2024-04-01T20:00:00', 
+	@Price = 12.50, 
+	@comando = 'aggiungi';
 
-EXEC UpdateMovieSchedule @ShowtimeID = 1, @comando = 'rimuovi';
+EXEC UpdateMovieSchedule 
+	@ShowtimeID = 1, 
+	@comando = 'rimuovi';
+
+------------------------------------------------------------------------
+
+/*
+ * Sviluppare una stored procedure InsertNewMovie che consenta di inserire un nuovo film nel
+ * sistema, richiedendo tutti i dettagli pertinenti come titolo, regista, data di uscita, durata e
+ * classificazione.
+ */
+DROP PROCEDURE IF EXISTS InsertNewMovie;
+CREATE PROCEDURE InsertNewMovie
+    @Title NVARCHAR(255),
+    @Director NVARCHAR(100),
+    @ReleaseDate DATE,
+    @DurationMinutes INT,
+    @Rating NVARCHAR(5)
+AS
+BEGIN
+    BEGIN TRY
+        BEGIN TRANSACTION
+			DECLARE @NewMovieID INT = 1;
+			WHILE EXISTS (SELECT * FROM Movie WHERE MovieID = @NewMovieID)
+			BEGIN
+				SET @NewMovieID = @NewMovieID + 1;
+			END
+			INSERT INTO Movie (MovieID, Title, Director, ReleaseDate, DurationMinutes, Rating)
+			VALUES (@NewMovieID, @Title, @Director, @ReleaseDate, @DurationMinutes, @Rating);
+        COMMIT TRANSACTION
+        PRINT 'film inserito';
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION
+        PRINT 'errore :' + ERROR_MESSAGE();
+    END CATCH
+END;
+
+EXEC InsertNewMovie
+    @Title = 'Un posto al sale',
+    @Director = 'Antonio Oinotna',
+    @ReleaseDate = '2021-12-12',
+    @DurationMinutes = 450,
+    @Rating = 'PG-13';
+
+
+------------------------------------------------------------------------
+
+/*
+ * Creare una stored procedure SubmitReview che consenta ai clienti di lasciare una recensione per
+ * un film, comprensiva di valutazione, testo e data. Questa procedura dovrebbe verificare che il
+ * cliente abbia effettivamente acquistato un biglietto per il film in questione prima di permettere la
+ * pubblicazione della recensione.
+ */
+
+DROP PROCEDURE IF EXISTS SubmitReview;
+CREATE PROCEDURE SubmitReview
+    @CustomerID INT,
+    @MovieID INT,
+    @ReviewText TEXT,
+    @Rating INT,
+    @ReviewDate DATETIME
+AS
+BEGIN
+    BEGIN TRY
+        IF EXISTS (
+            SELECT 1
+            FROM Ticket
+            JOIN Showtime ON Ticket.ShowtimeID = Showtime.ShowtimeID
+            WHERE Ticket.CustomerID = @CustomerID 
+            AND Showtime.MovieID = @MovieID
+            AND Showtime.ShowDateTime <= GETDATE()
+        )
+        BEGIN
+            DECLARE @NewReviewID INT = 1;
+            WHILE EXISTS (SELECT 1 FROM Review WHERE ReviewID = @NewReviewID)
+            BEGIN
+                SET @NewReviewID = @NewReviewID + 1;
+            END
+
+            INSERT INTO Review (ReviewID, MovieID, CustomerID, ReviewText, Rating, ReviewDate)
+            VALUES (@NewReviewID, @MovieID, @CustomerID, @ReviewText, @Rating, @ReviewDate);   
+            PRINT 'recensione registrata';
+        END
+        ELSE
+        BEGIN
+            PRINT 'il film non è stato ancora visto dal cliente e/o non ha ancora acquistato il biglietto.';
+        END
+    END TRY
+    BEGIN CATCH
+        PRINT 'errore :' + ERROR_MESSAGE();
+    END CATCH
+END;
+
+EXEC SubmitReview 
+    @CustomerID = 3, 
+    @MovieID = 3, 
+    @ReviewText = 'bello dai', 
+    @Rating = 3, 
+    @ReviewDate = '2024-03-18T15:00:00';
+
+EXEC SubmitReview 
+    @CustomerID = 1, 
+    @MovieID = 3, 
+    @ReviewText = 'non l''ho visto', 
+    @Rating = 5, 
+    @ReviewDate = '2024-03-19T15:00:00';
+
+
+	
