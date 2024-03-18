@@ -171,6 +171,7 @@ CREATE VIEW TotalEarningsPerMovie AS
 	SELECT Title, SUM(Price) AS 'Total Price'
 	FROM Movie
 	JOIN Showtime ON Movie.MovieID = Showtime.MovieID
+	JOIN Ticket ON Showtime.ShowtimeID = Ticket.ShowtimeID
 	GROUP BY Title
 
 SELECT * FROM TotalEarningsPerMovie;
